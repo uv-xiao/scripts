@@ -1,0 +1,45 @@
+id = "mihomo"
+name = "Mihomo installer + tmux controller"
+entry = "mihomo.sh"
+docs = "README.md"
+
+[[tests.smoke]]
+kind = "script"
+args = ["--help"]
+
+[[tests.integration]]
+kind = "script"
+args = ["install", "--prefix", "$HOME/.local", "--no-shell", "--yes"]
+
+[[tests.integration]]
+kind = "bash"
+run = [
+  'export PATH="$HOME/.local/bin:$PATH"',
+  'test -x "$HOME/.local/bin/mihomo"',
+  '"$HOME/.local/bin/mihomo" -v >/dev/null',
+  'CFG="$SCRIPT_TMPDIR/config.yaml"',
+  "cat >\"$CFG\" <<'YAML'",
+  'port: 7890',
+  'socks-port: 7891',
+  'allow-lan: false',
+  'mode: Rule',
+  'log-level: silent',
+  'proxies: []',
+  'proxy-groups:',
+  '  - name: Proxy',
+  '    type: select',
+  '    proxies:',
+  '      - DIRECT',
+  'rules:',
+  '  - MATCH,DIRECT',
+  'YAML',
+  '"$HOME/.local/bin/mihomo" -t -f "$CFG" >/dev/null',
+  'SESSION="mihomo-test"',
+  '"$SCRIPT_ENTRY" stop --session "$SESSION" || true',
+  '"$SCRIPT_ENTRY" start --session "$SESSION" --mihomo-bin "$HOME/.local/bin/mihomo" --config "$CFG"',
+  'sleep 1',
+  'tmux has-session -t "$SESSION" 2>/dev/null',
+  '"$SCRIPT_ENTRY" status --session "$SESSION" >/dev/null',
+  '"$SCRIPT_ENTRY" stop --session "$SESSION"',
+  '! tmux has-session -t "$SESSION" 2>/dev/null',
+]

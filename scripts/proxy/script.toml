@@ -1,0 +1,31 @@
+id = "proxy"
+name = "Proxy helpers"
+entry = "proxy.sh"
+docs = "README.md"
+
+[[tests.smoke]]
+kind = "script"
+args = ["--help"]
+
+[[tests.integration]]
+kind = "bash"
+run = [
+  'RC="$SCRIPT_TMPDIR/rc"',
+  'export RC',
+  'rm -f "$RC"',
+]
+
+[[tests.integration]]
+kind = "script"
+args = ["--rc", "$RC", "--port", "8899", "--yes"]
+
+[[tests.integration]]
+kind = "bash"
+run = [
+  'source "$RC"',
+  'proxy on 8899',
+  'test "${http_proxy:-}" = "http://127.0.0.1:8899"',
+  'proxy status >/dev/null',
+  'proxy off',
+  'test -z "${http_proxy-}"',
+]

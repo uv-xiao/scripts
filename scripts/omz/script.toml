@@ -1,0 +1,21 @@
+id = "omz"
+name = "Zsh + oh-my-zsh + powerlevel10k"
+entry = "omz.sh"
+docs = "README.md"
+
+[[tests.smoke]]
+kind = "script"
+args = ["--help"]
+
+[[tests.integration]]
+kind = "script"
+args = ["--prefix", "$HOME/.local", "--yes", "--shell", "both"]
+
+[[tests.integration]]
+kind = "bash"
+run = [
+  'test -x "$HOME/.local/bin/zsh"',
+  'test -d "$HOME/.oh-my-zsh"',
+  'test -d "$HOME/.oh-my-zsh/custom/themes/powerlevel10k"',
+  "grep -q 'ZSH_THEME=\"powerlevel10k/powerlevel10k\"' \"$HOME/.zshrc\"",
+]
