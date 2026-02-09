@@ -1,0 +1,19 @@
+id = "{{id}}"
+name = "{{name}}"
+entry = "{{id}}.sh"
+docs = "README.md"
+
+[[tests.smoke]]
+kind = "script"
+args = ["--help"]
+
+[[tests.integration]]
+kind = "script"
+args = ["--yes"]
+
+[[tests.integration]]
+kind = "bash"
+run = [
+  "# TODO: add real assertions",
+]
+

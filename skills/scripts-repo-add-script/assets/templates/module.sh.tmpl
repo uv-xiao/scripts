@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+{{id}}.sh - {{one_line}}
+
+Usage:
+  {{id}}.sh [options]
+
+Remote install (curl):
+  curl -fsSL https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/{{id}}/{{id}}.sh | bash -s -- --yes
+Remote install (wget):
+  wget -qO- https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/{{id}}/{{id}}.sh | bash -s -- --yes
+
+Options:
+  --yes        Do not prompt
+  -h, --help   Show help
+EOF
+}
+
+die() { echo "error: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
+is_tty() { [[ -t 0 && -t 1 ]]; }
+
+assume_yes=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes) assume_yes=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown argument: $1 (use --help)" ;;
+  esac
+done
+
+if [[ "$assume_yes" -eq 0 ]] && is_tty; then
+  read -r -p "Proceed? [y/N] " ans
+  [[ "${ans:-}" == "y" || "${ans:-}" == "Y" ]] || exit 1
+fi
+
+echo "TODO: implement {{id}}"
+

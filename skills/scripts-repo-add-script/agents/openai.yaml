@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scripts Repo: Add Script"
+  short_description: "Add a script module with tests"
+  default_prompt: "Add a new module under scripts/<id>/ with <id>.sh, README.md, and script.toml; write smoke + integration steps; run INTEGRATION=1 tests/run.sh and explain why outputs show it works."
