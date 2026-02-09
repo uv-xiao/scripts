@@ -10,6 +10,11 @@ Usage:
   mihomo.sh shell-snippet [options]
   mihomo.sh <start|stop|restart|status|attach> [options]
 
+Remote install (curl):
+  curl -fsSL https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/mihomo/mihomo.sh | bash -s -- install --yes
+Remote install (wget):
+  wget -qO- https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/mihomo/mihomo.sh | bash -s -- install --yes
+
 Back-compat:
   mihomo.sh [install options...]   (treated as `install`)
 
@@ -20,6 +25,7 @@ Install options:
   --rc PATH           Explicit rc file to modify (overrides --shell)
   --config PATH       Default config path for helpers (default: ~/.config/mihomo/config.yaml)
   --config-url URL    Default config URL to download when missing (optional)
+  --self-url URL      URL to download this script for installing mihomoctl (optional)
   --no-shell          Do not edit rc files
   --print             Print the rc snippet instead of editing files
   --yes               Do not prompt before editing files
@@ -39,6 +45,14 @@ die() { echo "error: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 is_tty() { [[ -t 0 && -t 1 ]]; }
 
+default_self_url() {
+  if [[ -n "${SCRIPTS_RAW_BASE:-}" ]]; then
+    echo "${SCRIPTS_RAW_BASE%/}/scripts/mihomo/mihomo.sh"
+    return 0
+  fi
+  echo "https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/mihomo/mihomo.sh"
+}
+
 expand_home_path() {
   local p="${1:-}"
   p="${p/#\~/$HOME}"
@@ -50,6 +64,19 @@ curl_retry() {
   curl --fail --location --silent --show-error \
     --retry 5 --retry-delay 2 --retry-connrefused \
     "$@"
+}
+
+install_mihomoctl() {
+  local dest="$1"
+  local self_url="$2"
+
+  local src="${BASH_SOURCE[0]:-}"
+  if [[ -n "$src" && -f "$src" ]] && grep -q "mihomo.sh - Install mihomo" "$src" 2>/dev/null; then
+    cp -f "$src" "$dest"
+    return 0
+  fi
+
+  curl_retry "$self_url" -o "$dest"
 }
 
 detect_shell() {
@@ -259,6 +286,7 @@ cmd_install() {
   local rc_path=""
   local config_path="$HOME/.config/mihomo/config.yaml"
   local config_url=""
+  local self_url=""
   local edit_shell=1
   local print_only=0
   local assume_yes=0
@@ -271,6 +299,7 @@ cmd_install() {
       --rc) rc_path="${2:-}"; shift 2 ;;
       --config) config_path="${2:-}"; shift 2 ;;
       --config-url) config_url="${2:-}"; shift 2 ;;
+      --self-url) self_url="${2:-}"; shift 2 ;;
       --no-shell) edit_shell=0; shift ;;
       --print) print_only=1; shift ;;
       --yes) assume_yes=1; shift ;;
@@ -284,6 +313,9 @@ cmd_install() {
     rc_path="$(expand_home_path "$rc_path")"
   fi
   config_path="$(expand_home_path "$config_path")"
+  if [[ -z "$self_url" ]]; then
+    self_url="$(default_self_url)"
+  fi
 
   need awk
   need curl
@@ -315,7 +347,7 @@ cmd_install() {
   echo "Installed $dest ($tag)"
 
   ctl_dest="$bin_dir/mihomoctl"
-  cp -f "$0" "$ctl_dest"
+  install_mihomoctl "$ctl_dest" "$self_url"
   chmod +x "$ctl_dest"
   echo "Installed $ctl_dest"
 

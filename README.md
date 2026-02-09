@@ -29,6 +29,8 @@ Each module has its own usage docs:
 - `scripts/proxy/README.md`
 - `scripts/mihomo/README.md`
 
+You can also run scripts directly from GitHub via `curl`/`wget` (see each module README for the exact command).
+
 ## Testing
 
 Smoke tests (runs each module’s `tests.smoke` from `script.toml`):

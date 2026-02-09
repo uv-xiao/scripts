@@ -8,6 +8,11 @@ proxy.sh - Install shell proxy helper functions into bash/zsh rc files.
 Usage:
   proxy.sh [--port PORT] [--shell bash|zsh|both] [--rc PATH] [--print] [--yes]
 
+Remote install (curl):
+  curl -fsSL https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/proxy/proxy.sh | bash -s -- --yes
+Remote install (wget):
+  wget -qO- https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/proxy/proxy.sh | bash -s -- --yes
+
 Options:
   --port PORT     Default proxy port to embed (default: 7890)
   --shell SHELL   Which shell rc to modify when --rc not provided (default: auto)

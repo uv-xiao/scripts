@@ -69,6 +69,15 @@ def main() -> int:
     print(f"export SCRIPT_ENTRY={q(str(entry_path))}")
     print("export SCRIPT_TMPDIR=\"$(mktemp -d)\"")
     print("trap 'rm -rf \"$SCRIPT_TMPDIR\"' EXIT")
+    if args.mode == "integration":
+        print("export SCRIPT_HOME=\"$SCRIPT_TMPDIR/home\"")
+        print("mkdir -p \"$SCRIPT_HOME\"")
+        print("export HOME=\"$SCRIPT_HOME\"")
+        print("export XDG_CONFIG_HOME=\"$HOME/.config\"")
+        print("export XDG_CACHE_HOME=\"$HOME/.cache\"")
+        print("export XDG_DATA_HOME=\"$HOME/.local/share\"")
+        print("unset ZSH ZSH_CUSTOM || true")
+        print("unset MIHOMO_CONFIG MIHOMO_CONFIG_URL MIHOMO_SESSION MIHOMO_BIN || true")
     print("cd \"$SCRIPT_DIR\"")
     print("")
 

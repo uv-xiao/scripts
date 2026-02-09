@@ -8,6 +8,11 @@ omz.sh - Install zsh (no root), oh-my-zsh, and powerlevel10k.
 Usage:
   omz.sh [options]
 
+Remote install (curl):
+  curl -fsSL https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/omz/omz.sh | bash -s -- --yes --shell both
+Remote install (wget):
+  wget -qO- https://raw.githubusercontent.com/uv-xiao/scripts/main/scripts/omz/omz.sh | bash -s -- --yes --shell both
+
 Options:
   --prefix DIR         Install prefix for zsh (default: ~/.local)
   --zsh-version VER    Zsh version to build (default: 5.9)
@@ -37,13 +42,23 @@ curl_retry() {
     "$@"
 }
 
+run_timeout() {
+  local seconds="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
 git_clone_retry() {
   local url="$1"
   local dest="$2"
   local attempt=1
   while [[ "$attempt" -le 5 ]]; do
     rm -rf "$dest"
-    if GIT_TERMINAL_PROMPT=0 git clone --depth=1 "$url" "$dest" >/dev/null 2>&1; then
+    if GIT_TERMINAL_PROMPT=0 run_timeout 120 git clone --depth=1 "$url" "$dest" >/dev/null 2>&1; then
       return 0
     fi
     sleep $((attempt * 2))
@@ -227,7 +242,7 @@ omz_dir="${ZSH:-$HOME/.oh-my-zsh}"
 omz_dir="$(expand_home_path "$omz_dir")"
 
 if [[ -d "$omz_dir/.git" ]]; then
-  GIT_TERMINAL_PROMPT=0 git -C "$omz_dir" pull --ff-only >/dev/null || true
+  GIT_TERMINAL_PROMPT=0 run_timeout 60 git -C "$omz_dir" pull --ff-only >/dev/null || true
 elif [[ -e "$omz_dir" ]]; then
   die "refusing to overwrite existing path: $omz_dir"
 else
@@ -238,7 +253,7 @@ fi
 p10k_dir="${ZSH_CUSTOM:-$omz_dir/custom}/themes/powerlevel10k"
 p10k_dir="$(expand_home_path "$p10k_dir")"
 if [[ -d "$p10k_dir/.git" ]]; then
-  GIT_TERMINAL_PROMPT=0 git -C "$p10k_dir" pull --ff-only >/dev/null || true
+  GIT_TERMINAL_PROMPT=0 run_timeout 60 git -C "$p10k_dir" pull --ff-only >/dev/null || true
 else
   mkdir -p "$(dirname -- "$p10k_dir")"
   git_clone_retry "https://github.com/romkatv/powerlevel10k.git" "$p10k_dir" \

@@ -14,8 +14,8 @@ args = ["--prefix", "$HOME/.local", "--yes", "--shell", "both"]
 [[tests.integration]]
 kind = "bash"
 run = [
-  'test -x "$HOME/.local/bin/zsh"',
-  'test -d "$HOME/.oh-my-zsh"',
-  'test -d "$HOME/.oh-my-zsh/custom/themes/powerlevel10k"',
-  "grep -q 'ZSH_THEME=\"powerlevel10k/powerlevel10k\"' \"$HOME/.zshrc\"",
+  'test -x "$HOME/.local/bin/zsh" || { echo "missing zsh: $HOME/.local/bin/zsh"; ls -la "$HOME/.local/bin" || true; exit 1; }',
+  'test -d "$HOME/.oh-my-zsh" || { echo "missing oh-my-zsh: $HOME/.oh-my-zsh"; ls -la "$HOME" || true; exit 1; }',
+  'test -d "$HOME/.oh-my-zsh/custom/themes/powerlevel10k" || { echo "missing p10k theme dir"; find "$HOME/.oh-my-zsh/custom" -maxdepth 4 -type d 2>/dev/null | sed -n "1,200p" || true; exit 1; }',
+  "grep -q 'ZSH_THEME=\"powerlevel10k/powerlevel10k\"' \"$HOME/.zshrc\" || { echo 'expected theme line missing in .zshrc'; sed -n '1,220p' \"$HOME/.zshrc\" || true; exit 1; }",
 ]
