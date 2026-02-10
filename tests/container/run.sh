@@ -70,6 +70,13 @@ is_loopback_proxy() {
   [[ "$val" == *"127.0.0.1"* || "$val" == *"localhost"* ]]
 }
 
+redact_proxy_url() {
+  local url="${1:-}"
+  # Redact credentials in proxy URLs: scheme://user:pass@host:port -> scheme://***@host:port
+  # (best-effort; keeps host/port visible for debugging without leaking secrets)
+  echo "$url" | sed -E 's#(://)([^/@]+@)#\\1***@#'
+}
+
 has_loopback_proxy=0
 for k in HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy; do
   if is_loopback_proxy "${!k-}"; then
@@ -170,23 +177,42 @@ start_proxy_forwarder_if_needed() {
   daemon_proxy="$(docker_daemon_proxy_url || true)"
   if [[ -n "$daemon_proxy" ]]; then
     set_container_proxy_envs "$daemon_proxy"
-    echo "note: using docker-daemon proxy for container tests ($daemon_proxy)" >&2
+    echo "note: using docker-daemon proxy for container tests ($(redact_proxy_url "$daemon_proxy"))" >&2
     return 0
   fi
 
-  local proxy_url target_port
+  local proxy_url target_port rewritten listen_host
   proxy_url="$(pick_loopback_proxy_url)" || return 0
-  target_port="${proxy_url##*:}"
-  if [[ -z "$target_port" || "$target_port" == "$proxy_url" ]]; then
-    die "could not parse proxy port from: $proxy_url"
-  fi
+  target_port="$(
+    python3 - "$proxy_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+u = sys.argv[1]
+p = urlparse(u)
+
+if not p.scheme or p.hostname is None or p.port is None:
+    raise SystemExit(f"invalid proxy URL (need scheme://host:port): {u}")
+
+# For safety, only support forwarding host-local proxies.
+if p.hostname not in ("127.0.0.1", "localhost"):
+    raise SystemExit(f"proxy is not loopback: {u}")
+
+# Reject unusual proxy URLs (paths/queries) to avoid surprises.
+if (p.path or "") not in ("", "/") or p.params or p.query or p.fragment:
+    raise SystemExit(f"proxy URL must not include path/query/fragment: {u}")
+
+print(p.port)
+PY
+  )" || die "could not parse proxy URL: $(redact_proxy_url "$proxy_url")"
 
   proxy_tmpdir="$(mktemp -d)"
   : >"$proxy_tmpdir/forward.out"
   : >"$proxy_tmpdir/forward.err"
 
+  listen_host="${PROXY_FORWARD_LISTEN_HOST:-0.0.0.0}"
   python3 "$repo_root/tests/tools/tcp_forward.py" \
-    --listen-host 0.0.0.0 \
+    --listen-host "$listen_host" \
     --listen-port 0 \
     --target-host 127.0.0.1 \
     --target-port "$target_port" \
@@ -212,12 +238,31 @@ start_proxy_forwarder_if_needed() {
     run_args+=(--add-host=host.docker.internal:host-gateway)
   fi
 
-  local rewritten
-  rewritten="$(rewrite_proxy_url "$proxy_url" "$host_alias" "$forward_port")"
+  rewritten="$(
+    python3 - "$proxy_url" "$host_alias" "$forward_port" <<'PY'
+from urllib.parse import urlparse, urlunparse
+import sys
+
+u = sys.argv[1]
+host_alias = sys.argv[2]
+port = int(sys.argv[3])
+p = urlparse(u)
+
+userinfo = ""
+if p.username:
+    userinfo = p.username
+    if p.password:
+        userinfo += ":" + p.password
+    userinfo += "@"
+
+netloc = f"{userinfo}{host_alias}:{port}"
+print(urlunparse((p.scheme, netloc, p.path or "", p.params or "", p.query or "", p.fragment or "")))
+PY
+  )"
 
   set_container_proxy_envs "$rewritten"
 
-  echo "note: using proxy forwarder for container tests ($proxy_url -> $rewritten)" >&2
+  echo "note: using proxy forwarder for container tests ($(redact_proxy_url "$proxy_url") -> $(redact_proxy_url "$rewritten"))" >&2
 }
 
 start_proxy_forwarder_if_needed

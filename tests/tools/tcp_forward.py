@@ -47,7 +47,7 @@ async def _amain() -> int:
     ap = argparse.ArgumentParser(
         description="Simple TCP port forwarder (for container proxy bridging)."
     )
-    ap.add_argument("--listen-host", default="0.0.0.0")
+    ap.add_argument("--listen-host", default="127.0.0.1")
     ap.add_argument("--listen-port", type=int, default=0)
     ap.add_argument("--target-host", required=True)
     ap.add_argument("--target-port", type=int, required=True)
@@ -93,4 +93,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
