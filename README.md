@@ -56,6 +56,9 @@ tests/container/run.sh
 **Module discovery**
 - `tests/runner.sh` scans `scripts/*/script.toml`.
 
+**Contributor automation**
+- Reusable contributor “skills” live under `.agent/skills/`.
+
 **Test model**
 - Each `script.toml` declares `[[tests.smoke]]` and `[[tests.integration]]` steps.
 - Steps run in a **single shared bash session per script** (env persists across steps).
