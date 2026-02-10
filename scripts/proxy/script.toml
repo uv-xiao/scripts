@@ -17,15 +17,20 @@ run = [
 
 [[tests.integration]]
 kind = "script"
-args = ["--rc", "$RC", "--port", "8899", "--yes"]
+args = ["--help"]
 
 [[tests.integration]]
 kind = "bash"
 run = [
+  'bash -s -- --rc "$RC" --port 8899 --yes < "$SCRIPT_ENTRY"',
   'source "$RC"',
   'proxy on 8899',
   'test "${http_proxy:-}" = "http://127.0.0.1:8899"',
+  'test "$(git config --global --get http.proxy 2>/dev/null || true)" = "http://127.0.0.1:8899"',
+  'test "$(git config --global --get https.proxy 2>/dev/null || true)" = "http://127.0.0.1:8899"',
   'proxy status >/dev/null',
   'proxy off',
   'test -z "${http_proxy-}"',
+  '! git config --global --get http.proxy >/dev/null 2>&1',
+  '! git config --global --get https.proxy >/dev/null 2>&1',
 ]

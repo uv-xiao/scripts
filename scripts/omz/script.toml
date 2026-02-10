@@ -17,5 +17,8 @@ run = [
   'test -x "$HOME/.local/bin/zsh" || { echo "missing zsh: $HOME/.local/bin/zsh"; ls -la "$HOME/.local/bin" || true; exit 1; }',
   'test -d "$HOME/.oh-my-zsh" || { echo "missing oh-my-zsh: $HOME/.oh-my-zsh"; ls -la "$HOME" || true; exit 1; }',
   'test -d "$HOME/.oh-my-zsh/custom/themes/powerlevel10k" || { echo "missing p10k theme dir"; find "$HOME/.oh-my-zsh/custom" -maxdepth 4 -type d 2>/dev/null | sed -n "1,200p" || true; exit 1; }',
+  'grep -q "oh-my-zsh.sh" "$HOME/.zshrc" || { echo "missing oh-my-zsh source line in .zshrc"; sed -n "1,220p" "$HOME/.zshrc" || true; exit 1; }',
+  'grep -q "# >>> scripts/omz >>>" "$HOME/.zshrc" || { echo "missing scripts/omz markers in .zshrc"; sed -n "1,220p" "$HOME/.zshrc" || true; exit 1; }',
+  'grep -q "# >>> scripts/zsh-path >>>" "$HOME/.bashrc" || { echo "missing scripts/zsh-path markers in .bashrc"; sed -n "1,220p" "$HOME/.bashrc" || true; exit 1; }',
   "grep -q 'ZSH_THEME=\"powerlevel10k/powerlevel10k\"' \"$HOME/.zshrc\" || { echo 'expected theme line missing in .zshrc'; sed -n '1,220p' \"$HOME/.zshrc\" || true; exit 1; }",
 ]

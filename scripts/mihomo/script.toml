@@ -8,8 +8,10 @@ kind = "script"
 args = ["--help"]
 
 [[tests.integration]]
-kind = "script"
-args = ["install", "--prefix", "$HOME/.local", "--no-shell", "--yes"]
+kind = "bash"
+run = [
+  'bash -s -- install --prefix "$HOME/.local" --no-shell --yes --self-url "file://$SCRIPT_ENTRY" < "$SCRIPT_ENTRY"',
+]
 
 [[tests.integration]]
 kind = "bash"
@@ -17,6 +19,9 @@ run = [
   'export PATH="$HOME/.local/bin:$PATH"',
   'test -x "$HOME/.local/bin/mihomo"',
   '"$HOME/.local/bin/mihomo" -v >/dev/null',
+  'test -x "$HOME/.local/bin/mihomoctl"',
+  '"$HOME/.local/bin/mihomoctl" --help >/dev/null',
+  '"$SCRIPT_ENTRY" shell-snippet --prefix "$HOME/.local" | grep -q "MIHOMO_CONFIG="',
   'CFG="$SCRIPT_TMPDIR/config.yaml"',
   "cat >\"$CFG\" <<'YAML'",
   'port: 7890',

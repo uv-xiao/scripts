@@ -38,7 +38,8 @@ expand_home_path() {
 
 curl_retry() {
   curl --fail --location --silent --show-error \
-    --retry 5 --retry-delay 2 --retry-connrefused \
+    --retry 8 --retry-delay 2 --retry-connrefused --retry-all-errors \
+    --connect-timeout 30 --max-time 1200 \
     "$@"
 }
 
