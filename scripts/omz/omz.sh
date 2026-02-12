@@ -28,6 +28,7 @@ EOF
 die() { echo "error: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 is_tty() { [[ -t 0 && -t 1 ]]; }
+is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
 expand_home_path() {
   local p="${1:-}"
@@ -160,6 +161,134 @@ jobs_count() {
   getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2
 }
 
+os_id() {
+  local id=""
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    id="${ID:-}"
+  fi
+  echo "${id:-unknown}"
+}
+
+try_compile_curses() {
+  local cppflags="${1:-}"
+  local ldflags="${2:-}"
+  local libs
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  cat >"$tmpdir/t.c" <<'C'
+#include <curses.h>
+int main(void) { initscr(); endwin(); return 0; }
+C
+
+  for libs in "-lncursesw -ltinfo" "-lncursesw" "-lncurses -ltinfo" "-lncurses" "-lcurses"; do
+    if gcc $cppflags "$tmpdir/t.c" -o "$tmpdir/t" $ldflags $libs >/dev/null 2>&1; then
+      rm -rf "$tmpdir"
+      return 0
+    fi
+  done
+
+  rm -rf "$tmpdir"
+  return 1
+}
+
+install_system_ncurses_deps_if_root() {
+  is_root || return 1
+
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y >/dev/null
+    apt-get install -y --no-install-recommends libncurses5-dev libncursesw5-dev >/dev/null
+    return 0
+  fi
+
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y ncurses-devel >/dev/null
+    return 0
+  fi
+
+  if command -v yum >/dev/null 2>&1; then
+    yum install -y ncurses-devel >/dev/null
+    return 0
+  fi
+
+  if command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm ncurses >/dev/null
+    return 0
+  fi
+
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache ncurses-dev >/dev/null
+    return 0
+  fi
+
+  return 1
+}
+
+build_ncurses_local() {
+  local install_prefix="$1"
+  local work_dir="$2"
+
+  local ver="${NCURSES_VERSION:-6.5}"
+  local url="https://ftp.gnu.org/gnu/ncurses/ncurses-${ver}.tar.gz"
+  local tarball="$work_dir/ncurses.tar.gz"
+
+  mkdir -p "$install_prefix"
+  curl_retry "$url" -o "$tarball"
+  tar -C "$work_dir" -xf "$tarball"
+
+  local src
+  src="$(find "$work_dir" -maxdepth 1 -type d -name "ncurses-*" | head -n1)"
+  [[ -n "${src:-}" ]] || die "failed to unpack ncurses source"
+
+  (
+    cd "$src"
+    ./configure \
+      --prefix="$install_prefix" \
+      --with-shared \
+      --without-debug \
+      --without-ada \
+      --enable-widec \
+      --with-termlib
+    make -j"$(jobs_count)"
+    make install
+  )
+}
+
+ensure_terminal_lib() {
+  local dep_prefix="$1"
+  local work_dir="$2"
+
+  if try_compile_curses "" ""; then
+    return 0
+  fi
+
+  echo "note: system curses/ncurses headers not found; attempting to satisfy dependency automatically" >&2
+
+  if install_system_ncurses_deps_if_root; then
+    if try_compile_curses "" ""; then
+      return 0
+    fi
+  fi
+
+  echo "note: building ncurses locally under $dep_prefix (no root)" >&2
+  build_ncurses_local "$dep_prefix" "$work_dir"
+
+  if ! try_compile_curses "-I$dep_prefix/include" "-L$dep_prefix/lib -Wl,-rpath,$dep_prefix/lib"; then
+    cat >&2 <<EOF
+error: failed to satisfy terminal library dependency (curses/ncurses)
+  OS: $(os_id)
+
+If you prefer system packages, install a curses development package, e.g.:
+  - Debian/Ubuntu: libncurses5-dev libncursesw5-dev
+  - Fedora/RHEL/CentOS: ncurses-devel
+  - Arch: ncurses
+  - Alpine: ncurses-dev
+EOF
+    exit 1
+  fi
+}
+
 render_zsh_block() {
   local bin_dir="$1"
   cat <<EOF
@@ -219,6 +348,9 @@ mkdir -p "$bin_dir"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+deps_prefix="$prefix/.deps/ncurses"
+ensure_terminal_lib "$deps_prefix" "$tmp"
+
 zsh_url="https://www.zsh.org/pub/zsh-${zsh_version}.tar.xz"
 curl_retry "$zsh_url" -o "$tmp/zsh.tar.xz"
 tar -C "$tmp" -xf "$tmp/zsh.tar.xz"
@@ -226,9 +358,16 @@ tar -C "$tmp" -xf "$tmp/zsh.tar.xz"
 src_dir="$(find "$tmp" -maxdepth 1 -type d -name "zsh-*" | head -n1)"
 [[ -n "${src_dir:-}" ]] || die "failed to unpack zsh source"
 
+zsh_cppflags=""
+zsh_ldflags=""
+if [[ -d "$deps_prefix/include" && -d "$deps_prefix/lib" ]]; then
+  zsh_cppflags="-I$deps_prefix/include"
+  zsh_ldflags="-L$deps_prefix/lib -Wl,-rpath,$deps_prefix/lib"
+fi
+
 (
   cd "$src_dir"
-  ./configure --prefix="$prefix" --without-tcsetpgrp
+  CPPFLAGS="$zsh_cppflags" LDFLAGS="$zsh_ldflags" ./configure --prefix="$prefix" --without-tcsetpgrp
   make -j"$(jobs_count)"
   make install
 )
