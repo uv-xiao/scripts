@@ -6,7 +6,7 @@ usage() {
 tests/container/run.sh - Run repo tests inside a container (docker or podman).
 
 Usage:
-  tests/container/run.sh [--engine auto|docker|podman] [--image TAG] [--no-build] [--network auto|bridge|host]
+  tests/container/run.sh [--engine auto|docker|podman] [--image TAG] [--dockerfile PATH] [--platform PLATFORM] [--no-build] [--network auto|bridge|host]
 
 Notes:
   - Runs with network access and no TTY (no prompts).
@@ -20,6 +20,8 @@ die() { echo "error: $*" >&2; exit 1; }
 
 engine="auto"
 image="script-collection-test:local"
+dockerfile=""
+platform=""
 no_build=0
 network_mode="auto"
 
@@ -27,6 +29,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --engine) engine="${2:-}"; shift 2 ;;
     --image) image="${2:-}"; shift 2 ;;
+    --dockerfile) dockerfile="${2:-}"; shift 2 ;;
+    --platform) platform="${2:-}"; shift 2 ;;
     --no-build) no_build=1; shift ;;
     --network) network_mode="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -35,6 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+dockerfile="${dockerfile:-$repo_root/tests/container/Dockerfile}"
 
 pick_engine() {
   if [[ "$engine" == "docker" || "$engine" == "podman" ]]; then
@@ -56,7 +61,15 @@ pick_engine() {
 eng="$(pick_engine)"
 
 if [[ "$no_build" -eq 0 ]]; then
-  "$eng" build -f "$repo_root/tests/container/Dockerfile" -t "$image" "$repo_root"
+  if [[ "$eng" == "docker" && -n "${platform:-}" ]]; then
+    if docker buildx version >/dev/null 2>&1; then
+      docker buildx build --load --platform "$platform" -f "$dockerfile" -t "$image" "$repo_root"
+    else
+      die "docker buildx not available (needed for --platform)"
+    fi
+  else
+    "$eng" build -f "$dockerfile" -t "$image" "$repo_root"
+  fi
 fi
 
 mount_suffix=""
@@ -94,6 +107,10 @@ case "$network_mode" in
 esac
 
 run_args=(run --rm)
+
+if [[ "$eng" == "docker" && -n "${platform:-}" ]]; then
+  run_args+=(--platform "$platform")
+fi
 
 if [[ "$network_mode" == "host" ]]; then
   run_args+=(--network host)

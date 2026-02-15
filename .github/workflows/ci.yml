@@ -7,8 +7,32 @@ on:
 jobs:
   container-tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-amd64
+            dockerfile: tests/container/images/ubuntu/Dockerfile
+            platform: linux/amd64
+          - name: ubuntu-arm64
+            dockerfile: tests/container/images/ubuntu/Dockerfile
+            platform: linux/arm64
+          - name: fedora-amd64
+            dockerfile: tests/container/images/fedora/Dockerfile
+            platform: linux/amd64
+          - name: rocky-amd64
+            dockerfile: tests/container/images/rocky/Dockerfile
+            platform: linux/amd64
+          - name: alpine-amd64
+            dockerfile: tests/container/images/alpine/Dockerfile
+            platform: linux/amd64
+          - name: openeuler-arm64
+            dockerfile: tests/container/images/openeuler/Dockerfile
+            platform: linux/arm64
+    name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
       - name: Run tests in container
-        run: tests/container/run.sh --engine docker
-
+        run: tests/container/run.sh --engine docker --dockerfile "${{ matrix.dockerfile }}" --platform "${{ matrix.platform }}"
