@@ -30,6 +30,9 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; 
 is_tty() { [[ -t 0 && -t 1 ]]; }
 is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
+TERMLIB_CPPFLAGS=""
+TERMLIB_LDFLAGS=""
+
 expand_home_path() {
   local p="${1:-}"
   p="${p/#\~/$HOME}"
@@ -171,6 +174,45 @@ os_id() {
   echo "${id:-unknown}"
 }
 
+ensure_cmp() {
+  command -v cmp >/dev/null 2>&1 && return 0
+
+  command -v cksum >/dev/null 2>&1 || die "missing required command: cmp (or cksum as a fallback)"
+
+  local shim_dir="${1:-}"
+  [[ -n "$shim_dir" ]] || die "internal: ensure_cmp requires shim dir"
+  mkdir -p "$shim_dir"
+
+  cat >"$shim_dir/cmp" <<'SH'
+#!/usr/bin/env sh
+set -eu
+
+# Minimal cmp replacement used only for building dependencies.
+# Supports: cmp -s FILE1 FILE2
+if [ "${1:-}" = "-s" ]; then
+  shift
+fi
+
+f1="${1:-}"
+f2="${2:-}"
+if [ -z "$f1" ] || [ -z "$f2" ]; then
+  exit 2
+fi
+
+o1="$(cksum "$f1" 2>/dev/null || true)"
+o2="$(cksum "$f2" 2>/dev/null || true)"
+if [ -z "$o1" ] || [ -z "$o2" ]; then
+  exit 2
+fi
+
+if [ "$o1" = "$o2" ]; then
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$shim_dir/cmp"
+}
+
 try_compile_curses() {
   local cppflags="${1:-}"
   local ldflags="${2:-}"
@@ -182,13 +224,67 @@ try_compile_curses() {
 int main(void) { initscr(); endwin(); return 0; }
 C
 
-  for libs in "-lncursesw -ltinfo" "-lncursesw" "-lncurses -ltinfo" "-lncurses" "-lcurses"; do
+  for libs in \
+    "-lncursesw -ltinfow" \
+    "-lncursesw -ltinfo" \
+    "-lncursesw" \
+    "-lncurses -ltinfow" \
+    "-lncurses -ltinfo" \
+    "-lncurses" \
+    "-lcurses"; do
     if gcc $cppflags "$tmpdir/t.c" -o "$tmpdir/t" $ldflags $libs >/dev/null 2>&1; then
       rm -rf "$tmpdir"
       return 0
     fi
   done
 
+  rm -rf "$tmpdir"
+  return 1
+}
+
+detect_ncurses_include_flags() {
+  local prefix="$1"
+  local flags=()
+
+  if [[ -d "$prefix/include" ]]; then
+    flags+=("-I$prefix/include")
+  fi
+  if [[ -d "$prefix/include/ncursesw" ]]; then
+    flags+=("-I$prefix/include/ncursesw")
+  fi
+
+  printf '%s ' "${flags[@]:-}"
+}
+
+detect_ncurses_libdir() {
+  local prefix="$1"
+  local d
+  for d in "$prefix/lib" "$prefix/lib64"; do
+    [[ -d "$d" ]] || continue
+    if compgen -G "$d/libncursesw.so*" >/dev/null 2>&1 || compgen -G "$d/libncurses.so*" >/dev/null 2>&1 || compgen -G "$d/libtinfo.so*" >/dev/null 2>&1 || compgen -G "$d/libtinfow.so*" >/dev/null 2>&1; then
+      printf '%s' "$d"
+      return 0
+    fi
+  done
+  return 1
+}
+
+term_header_has_termcap_code_arrays() {
+  local cppflags="${1:-}"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  cat >"$tmpdir/t.c" <<'C'
+#include <term.h>
+void *p1 = (void*)boolcodes;
+void *p2 = (void*)numcodes;
+void *p3 = (void*)strcodes;
+int main(void) { return (p1 == p2) || (p2 == p3); }
+C
+
+  if gcc $cppflags -c "$tmpdir/t.c" -o "$tmpdir/t.o" >/dev/null 2>&1; then
+    rm -rf "$tmpdir"
+    return 0
+  fi
   rm -rf "$tmpdir"
   return 1
 }
@@ -245,6 +341,7 @@ build_ncurses_local() {
     cd "$src"
     ./configure \
       --prefix="$install_prefix" \
+      --libdir="$install_prefix/lib" \
       --with-shared \
       --without-debug \
       --without-ada \
@@ -253,6 +350,33 @@ build_ncurses_local() {
     make -j"$(jobs_count)"
     make install
   )
+
+  # Make headers and linker names predictable across distros/libdir conventions.
+  if [[ ! -e "$install_prefix/include/curses.h" && -e "$install_prefix/include/ncursesw/curses.h" ]]; then
+    ln -sf "ncursesw/curses.h" "$install_prefix/include/curses.h"
+  fi
+  if [[ ! -e "$install_prefix/include/ncurses.h" && -e "$install_prefix/include/ncursesw/ncurses.h" ]]; then
+    ln -sf "ncursesw/ncurses.h" "$install_prefix/include/ncurses.h"
+  fi
+
+  local libdir="$install_prefix/lib"
+  if [[ ! -d "$libdir" ]]; then
+    libdir="$(detect_ncurses_libdir "$install_prefix" || true)"
+  fi
+  if [[ -n "${libdir:-}" ]]; then
+    (
+      shopt -s nullglob
+      local base target
+      for base in libncursesw libncurses libtinfo libtinfow; do
+        if [[ ! -e "$libdir/${base}.so" ]]; then
+          for target in "$libdir/${base}.so."*; do
+            ln -sf "${target##*/}" "$libdir/${base}.so" || true
+            break
+          done
+        fi
+      done
+    )
+  fi
 }
 
 ensure_terminal_lib() {
@@ -274,7 +398,13 @@ ensure_terminal_lib() {
   echo "note: building ncurses locally under $dep_prefix (no root)" >&2
   build_ncurses_local "$dep_prefix" "$work_dir"
 
-  if ! try_compile_curses "-I$dep_prefix/include" "-L$dep_prefix/lib -Wl,-rpath,$dep_prefix/lib"; then
+  local inc_flags libdir ldflags
+  inc_flags="$(detect_ncurses_include_flags "$dep_prefix")"
+  libdir="$(detect_ncurses_libdir "$dep_prefix" || true)"
+  [[ -n "${libdir:-}" ]] || libdir="$dep_prefix/lib"
+  ldflags="-L$libdir -Wl,-rpath,$libdir"
+
+  if ! try_compile_curses "$inc_flags" "$ldflags"; then
     cat >&2 <<EOF
 error: failed to satisfy terminal library dependency (curses/ncurses)
   OS: $(os_id)
@@ -287,6 +417,9 @@ If you prefer system packages, install a curses development package, e.g.:
 EOF
     exit 1
   fi
+
+  TERMLIB_CPPFLAGS="$inc_flags"
+  TERMLIB_LDFLAGS="$ldflags"
 }
 
 render_zsh_block() {
@@ -348,6 +481,10 @@ mkdir -p "$bin_dir"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+shim_dir="$tmp/.shim-bin"
+ensure_cmp "$shim_dir"
+export PATH="$shim_dir:$PATH"
+
 deps_prefix="$prefix/.deps/ncurses"
 ensure_terminal_lib "$deps_prefix" "$tmp"
 
@@ -358,11 +495,14 @@ tar -C "$tmp" -xf "$tmp/zsh.tar.xz"
 src_dir="$(find "$tmp" -maxdepth 1 -type d -name "zsh-*" | head -n1)"
 [[ -n "${src_dir:-}" ]] || die "failed to unpack zsh source"
 
-zsh_cppflags=""
-zsh_ldflags=""
-if [[ -d "$deps_prefix/include" && -d "$deps_prefix/lib" ]]; then
-  zsh_cppflags="-I$deps_prefix/include"
-  zsh_ldflags="-L$deps_prefix/lib -Wl,-rpath,$deps_prefix/lib"
+zsh_cppflags="${TERMLIB_CPPFLAGS:-}"
+zsh_ldflags="${TERMLIB_LDFLAGS:-}"
+
+if term_header_has_termcap_code_arrays "$zsh_cppflags"; then
+  # Some distros ship term.h that declares boolcodes/numcodes/strcodes but zsh's
+  # configure may not define HAVE_*CODES. Force it so Src/Modules/termcap.c
+  # doesn't redeclare those identifiers and fail to compile.
+  zsh_cppflags="${zsh_cppflags} -DHAVE_BOOLCODES -DHAVE_NUMCODES -DHAVE_STRCODES"
 fi
 
 (
